@@ -24,6 +24,9 @@ let isEnabled = true;
 export function activate(context: vscode.ExtensionContext) {
   console.log('Styled Comments extension is now active');
 
+  // Get initial configuration
+  isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
+
   // Initialize decoration types
   initializeDecorationTypes();
 
@@ -50,26 +53,44 @@ export function activate(context: vscode.ExtensionContext) {
         clearDecorations();
       }
     }
+    
+    // Reinitialize decorations if editor font weight changes
+    if (event.affectsConfiguration('editor.fontWeight')) {
+      initializeDecorationTypes();
+      if (isEnabled) {
+        updateDecorations();
+      }
+    }
   });
 
-  // Listen for document changes
+  // Listen for document changes with throttling
+  let timeout: NodeJS.Timeout | undefined;
   const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
     if (isEnabled && event.document === vscode.window.activeTextEditor?.document) {
-      updateDecorations();
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      timeout = setTimeout(() => {
+        updateDecorations();
+      }, 100); // Throttle updates to avoid performance issues
     }
   });
 
   // Listen for active editor changes
   const activeEditorChangeListener = vscode.window.onDidChangeActiveTextEditor(() => {
     if (isEnabled) {
-      updateDecorations();
+      setTimeout(() => {
+        updateDecorations();
+      }, 100); // Small delay to ensure editor is ready
     }
   });
 
-  // Initial decoration update
-  if (isEnabled) {
-    updateDecorations();
-  }
+  // Initial decoration update with delay
+  setTimeout(() => {
+    if (isEnabled) {
+      updateDecorations();
+    }
+  }, 500);
 
   context.subscriptions.push(
     enableCommand,
@@ -85,11 +106,18 @@ function initializeDecorationTypes() {
   decorationTypes.forEach(decoration => decoration.dispose());
   decorationTypes.clear();
 
+  // Get the current editor font weight from settings
+  const editorConfig = vscode.workspace.getConfiguration('editor');
+  const fontWeight = editorConfig.get('fontWeight', '400'); // Default to '400' if not set
+
   // Create new decoration types
   commentStyles.forEach(style => {
     const decorationType = vscode.window.createTextEditorDecorationType({
       color: style.color,
-      fontWeight: style.isBold ? 'bold' : 'normal'
+      fontWeight: style.isBold ? 'bold' : fontWeight.toString(),
+      // Ensure consistent font rendering
+      textDecoration: 'none',
+      fontStyle: fontWeight // Explicitly set font style
     });
     decorationTypes.set(style.symbol, decorationType);
   });
@@ -102,8 +130,6 @@ function updateDecorations() {
   }
 
   const document = activeEditor.document;
-  const text = document.getText();
-  const lines = text.split('\n');
 
   // Clear previous decorations
   decorationTypes.forEach(decoration => {
@@ -117,73 +143,89 @@ function updateDecorations() {
   });
 
   // Process each line
-  lines.forEach((line, lineIndex) => {
-    const trimmedLine = line.trim();
-    
-    // Check if line is a comment (supports //, /*, #, --, <!-- etc.)
-    const commentPatterns = [
-      /^\s*\/\/\s*(.*)$/,      // // comments
-      /^\s*\/\*\s*(.*?)\s*\*\/$/,  // /* */ comments (single line)
-      /^\s*\/\*\s*(.*)$/,      // /* comments (multi-line start)
-      /^\s*\*\s*(.*)$/,        // * comments (multi-line middle)
-      /^\s*#\s*(.*)$/,         // # comments (Python, shell, etc.)
-      /^\s*--\s*(.*)$/,        // -- comments (SQL, Lua, etc.)
-      /^\s*<!--\s*(.*?)\s*-->$/,   // <!-- --> comments (HTML)
-      /^\s*<!--\s*(.*)$/,      // <!-- comments (HTML start)
-    ];
+  for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
+    const line = document.lineAt(lineIndex);
+    const lineText = line.text;
+    const trimmedLine = lineText.trim();
 
+    // Simple comment detection - look for common comment patterns
     let commentContent = '';
-    let commentStart = 0;
     let isComment = false;
 
-    for (const pattern of commentPatterns) {
-      const match = line.match(pattern);
-      if (match) {
-        commentContent = match[1] || '';
-        commentStart = line.indexOf(match[0].trim());
-        isComment = true;
-        break;
-      }
+    // Check for // comments
+    const doubleSlashMatch = lineText.match(/^\s*\/\/\s*(.*)$/);
+    if (doubleSlashMatch) {
+      commentContent = doubleSlashMatch[1];
+      isComment = true;
     }
 
-    if (!isComment) return;
+    // Check for /* */ single line comments
+    const blockCommentMatch = lineText.match(/^\s*\/\*\s*(.*?)\s*\*\/\s*$/);
+    if (blockCommentMatch) {
+      commentContent = blockCommentMatch[1];
+      isComment = true;
+    }
+
+    // Check for # comments (Python, shell, etc.)
+    const hashCommentMatch = lineText.match(/^\s*#\s*(.*)$/);
+    if (hashCommentMatch) {
+      commentContent = hashCommentMatch[1];
+      isComment = true;
+    }
+
+    // Check for -- comments (SQL, Lua, etc.)
+    const dashCommentMatch = lineText.match(/^\s*--\s*(.*)$/);
+    if (dashCommentMatch) {
+      commentContent = dashCommentMatch[1];
+      isComment = true;
+    }
+
+    // Check for <!-- --> HTML comments
+    const htmlCommentMatch = lineText.match(/^\s*<!--\s*(.*?)\s*-->\s*$/);
+    if (htmlCommentMatch) {
+      commentContent = htmlCommentMatch[1];
+      isComment = true;
+    }
+
+    if (!isComment) continue;
+
+    console.log(`Found comment on line ${lineIndex}: "${commentContent}"`);
 
     // Check each style symbol
     commentStyles.forEach(style => {
       if (style.symbol === 'TODO:') {
         // Special handling for TODO: - only make the TODO: part bold
-        const todoMatch = commentContent.match(/^TODO:\s*(.*)/i);
-        if (todoMatch) {
-          const todoStart = line.indexOf('TODO:');
-          if (todoStart !== -1) {
+        if (commentContent.toUpperCase().startsWith('TODO:')) {
+          const todoIndex = lineText.toUpperCase().indexOf('TODO:');
+          if (todoIndex !== -1) {
             const range = new vscode.Range(
-              new vscode.Position(lineIndex, todoStart),
-              new vscode.Position(lineIndex, todoStart + 5) // "TODO:".length
+              new vscode.Position(lineIndex, todoIndex),
+              new vscode.Position(lineIndex, todoIndex + 5) // "TODO:".length
             );
             decorationRanges.get(style.symbol)?.push(range);
+            console.log(`Added TODO decoration for line ${lineIndex}`);
           }
         }
       } else {
         // Regular symbol checking
         if (commentContent.startsWith(style.symbol)) {
-          const symbolStart = line.indexOf(style.symbol, commentStart);
-          if (symbolStart !== -1) {
-            const range = new vscode.Range(
-              new vscode.Position(lineIndex, 0),
-              new vscode.Position(lineIndex, line.length)
-            );
-            decorationRanges.get(style.symbol)?.push(range);
-          }
+          const range = new vscode.Range(
+            new vscode.Position(lineIndex, 0),
+            new vscode.Position(lineIndex, lineText.length)
+          );
+          decorationRanges.get(style.symbol)?.push(range);
+          console.log(`Added ${style.symbol} decoration for line ${lineIndex}`);
         }
       }
     });
-  });
+  }
 
   // Apply decorations
   decorationRanges.forEach((ranges, symbol) => {
     const decorationType = decorationTypes.get(symbol);
     if (decorationType && ranges.length > 0) {
       activeEditor.setDecorations(decorationType, ranges);
+      console.log(`Applied ${ranges.length} decorations for symbol: ${symbol}`);
     }
   });
 }
