@@ -9,13 +9,13 @@ interface CommentStyle {
 
 const commentStyles: CommentStyle[] = [
   { symbol: '?', color: '#3498db' },      // Blue
-  { symbol: '*', color: '#2ecc71' },      // Lime green
+  { symbol: '*', color: '#abdf57ff' },      // Lime green
   { symbol: '!', color: '#e74c3c' },      // Red
   { symbol: '@', color: '#f1c40f' },      // Yellow
   { symbol: 'TODO:', color: 'inherit', isBold: true, isLineOnly: true }, // Bold TODO
-  { symbol: '$', color: '#9b59b6' },      // Purple
-  { symbol: '&', color: '#8b4513' },      // Brown
-  { symbol: '#', color: '#ff6b35' }       // Orange
+  { symbol: '$', color: '#a16fcaff' },      // Purple
+  { symbol: '&', color: '#965426ff' },      // Brown
+  { symbol: '#', color: '#ec784aff' }       // Orange
 ];
 
 let decorationTypes: Map<string, vscode.TextEditorDecorationType> = new Map();

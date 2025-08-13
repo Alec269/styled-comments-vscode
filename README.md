@@ -13,6 +13,11 @@ Highlight comments with special symbols in different colors to better organize y
 - **&** - Brown for connections/links
 - **#** - Orange for tags/categories
 
+## Activation
+
+Press `ctrl + shift +p` and search `Enable Styled Comments`.  
+After locating the command press enter and the extension will activate.  
+
 ## Usage
 
 Simply add one of the special symbols at the start of your comment:
@@ -26,3 +31,5 @@ Simply add one of the special symbols at the start of your comment:
 // $ This costs $50 per month
 // & Related to the user authentication
 // # Feature: Login system
+```
+

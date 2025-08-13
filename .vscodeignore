@@ -1,0 +1,47 @@
+# Source files
+src/**
+tsconfig.json
+.gitignore
+.git/**
+
+# Build artifacts that shouldn't be packaged
+node_modules/**
+.vscode-test/**
+*.vsix
+
+# Development files
+.eslintrc.json
+.prettierrc
+webpack.config.js
+
+# Documentation that's not needed in the package
+CHANGELOG.md
+.github/**
+
+# Any test or example files
+test/**
+tests/**
+examples/**
+*.test.*
+
+# Personal files
+hmm.txt
+notes.txt
+todo.txt
+**/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/**
+.idea/**
+*.swp
+*.swo
+
+# Any other files 
+*.tmp
+*.temp
+*.log
+*.txt

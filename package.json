@@ -2,7 +2,7 @@
   "name": "styled-comments",
   "displayName": "Styled Comments",
   "description": "Highlight comments with special symbols in different colors - ?, *, !, @, TODO:, $, &, #",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "Alec269",
   "author": {
     "name": "Nomayer Alam",
@@ -11,8 +11,12 @@
   "license": "ARR",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/Alec269/styled-comments-vscode.git"
   },
+  "bugs": {
+    "url": "https://github.com/Alec269/styled-comments-vscode/issues"
+  },
+  "homepage": "https://github.com/Alec269/styled-comments-vscode#readme",
   "keywords": [
     "comments",
     "highlighting",
