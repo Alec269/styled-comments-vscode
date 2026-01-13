@@ -1,246 +1,227 @@
+// src/extension.ts
 import * as vscode from 'vscode';
 
 interface CommentStyle {
-  symbol: string;
-  color: string;
-  isBold?: boolean;
-  isLineOnly?: boolean; // for TODO: only the text should be bold, not the whole line
+   symbol: string;
+   color: string;
+   isBold?: boolean;
+   isLineOnly?: boolean;
 }
+
+interface CommentSyntax {
+   line?: string[];
+   block?: { start: string; end: string };
+}
+
+/* ---------- COMMENT STYLES ---------- */
 
 const commentStyles: CommentStyle[] = [
-  { symbol: '?', color: '#3498db' },      // Blue
-  { symbol: '*', color: '#abdf57ff' },      // Lime green
-  { symbol: '!', color: '#e74c3c' },      // Red
-  { symbol: '@', color: '#f1c40f' },      // Yellow
-  { symbol: 'TODO:', color: 'inherit', isBold: true, isLineOnly: true }, // Bold TODO
-  { symbol: '$', color: '#a16fcaff' },      // Purple
-  { symbol: '&', color: '#965426ff' },      // Brown
-  { symbol: '#', color: '#ec784aff' }       // Orange
+   { symbol: '?', color: '#449edaff' },
+   { symbol: '*', color: '#34c06eff' },
+   { symbol: '!', color: '#ce5d50ff' },
+   { symbol: '@', color: '#ccad31ff' },
+   { symbol: 'TODO:', color: 'rgb(226, 202, 107)', isBold: true, isLineOnly: true },
+   { symbol: '$', color: 'rgb(179, 117, 204)' },
+   { symbol: '&', color: 'rgb(177, 97, 39)' },
+   { symbol: '#', color: '#e67f59ff' },
+   { symbol: '%', color: '#a9d676ff' },
+   { symbol: '~', color: '#db89c7ff' },
+   { symbol: '`', color: 'rgb(95, 102, 204)' },
+   { symbol: '^', color: 'rgb(65, 180, 142)' }
 ];
 
-let decorationTypes: Map<string, vscode.TextEditorDecorationType> = new Map();
+/* ---------- LANGUAGE COMMENT SYNTAX ---------- */
+/* Markdown intentionally excluded */
+
+const commentSyntaxByLanguage: Record<string, CommentSyntax> = {
+   javascript: { line: ['//'], block: { start: '/*', end: '*/' } },
+   typescript: { line: ['//'], block: { start: '/*', end: '*/' } },
+   c: { line: ['//'], block: { start: '/*', end: '*/' } },
+   cpp: { line: ['//'], block: { start: '/*', end: '*/' } },
+   rust: { line: ['//'], block: { start: '/*', end: '*/' } },
+   python: { line: ['#'] },
+   shellscript: { line: ['#'] },
+   lua: { line: ['--'] },
+   sql: { line: ['--'] },
+   asm: { line: [';'] },
+   nasm: { line: [';'] },
+   gas: { line: ['#', ';'] },
+   html: { line: ['<!--'] },
+   llvm: { line: [';'] },
+   plaintext: { line: ['#;'] }
+};
+
+/* ---------- STATE ---------- */
+
+let decorationTypes = new Map<string, vscode.TextEditorDecorationType>();
 let isEnabled = true;
 
+/* ---------- ACTIVATE ---------- */
+
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Styled Comments extension is now active');
+   isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
 
-  // Get initial configuration
-  isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
+   initializeDecorationTypes();
 
-  // Initialize decoration types
-  initializeDecorationTypes();
+   context.subscriptions.push(
+      vscode.commands.registerCommand('styledComments.enable', () => {
+         isEnabled = true;
+         vscode.workspace.getConfiguration().update('styledComments.enabled', true, true);
+         updateDecorations();
+      }),
 
-  // Register commands
-  const enableCommand = vscode.commands.registerCommand('styledComments.enable', () => {
-    isEnabled = true;
-    vscode.workspace.getConfiguration().update('styledComments.enabled', true, true);
-    updateDecorations();
-  });
+      vscode.commands.registerCommand('styledComments.disable', () => {
+         isEnabled = false;
+         vscode.workspace.getConfiguration().update('styledComments.enabled', false, true);
+         clearDecorations();
+      }),
 
-  const disableCommand = vscode.commands.registerCommand('styledComments.disable', () => {
-    isEnabled = false;
-    vscode.workspace.getConfiguration().update('styledComments.enabled', false, true);
-    clearDecorations();
-  });
+      vscode.workspace.onDidChangeConfiguration(e => {
+         if (e.affectsConfiguration('styledComments.enabled')) {
+            isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
+            isEnabled ? updateDecorations() : clearDecorations();
+         }
+      }),
 
-  // Listen for configuration changes
-  const configurationChangeListener = vscode.workspace.onDidChangeConfiguration(event => {
-    if (event.affectsConfiguration('styledComments.enabled')) {
-      isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
-      if (isEnabled) {
-        updateDecorations();
-      } else {
-        clearDecorations();
-      }
-    }
-    
-    // Reinitialize decorations if editor font weight changes
-    if (event.affectsConfiguration('editor.fontWeight')) {
-      initializeDecorationTypes();
-      if (isEnabled) {
-        updateDecorations();
-      }
-    }
-  });
+      vscode.workspace.onDidChangeTextDocument(e => {
+         if (isEnabled && e.document === vscode.window.activeTextEditor?.document) {
+            scheduleUpdate();
+         }
+      }),
 
-  // Listen for document changes with throttling
-  let timeout: NodeJS.Timeout | undefined;
-  const documentChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
-    if (isEnabled && event.document === vscode.window.activeTextEditor?.document) {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-      timeout = setTimeout(() => {
-        updateDecorations();
-      }, 100); // Throttle updates to avoid performance issues
-    }
-  });
+      vscode.window.onDidChangeActiveTextEditor(() => {
+         if (isEnabled) scheduleUpdate();
+      })
+   );
 
-  // Listen for active editor changes
-  const activeEditorChangeListener = vscode.window.onDidChangeActiveTextEditor(() => {
-    if (isEnabled) {
-      setTimeout(() => {
-        updateDecorations();
-      }, 100); // Small delay to ensure editor is ready
-    }
-  });
-
-  // Initial decoration update with delay
-  setTimeout(() => {
-    if (isEnabled) {
-      updateDecorations();
-    }
-  }, 500);
-
-  context.subscriptions.push(
-    enableCommand,
-    disableCommand,
-    configurationChangeListener,
-    documentChangeListener,
-    activeEditorChangeListener
-  );
+   scheduleUpdate();
 }
 
+/* ---------- DECORATIONS ---------- */
+
 function initializeDecorationTypes() {
-  // Clear existing decoration types
-  decorationTypes.forEach(decoration => decoration.dispose());
-  decorationTypes.clear();
+   decorationTypes.forEach(d => d.dispose());
+   decorationTypes.clear();
 
-  // Get the current editor font weight from settings
-  const editorConfig = vscode.workspace.getConfiguration('editor');
-  const fontWeight = editorConfig.get('fontWeight', '400'); // Default to '400' if not set
+   const fontWeight = vscode.workspace.getConfiguration('editor').get('fontWeight', '400');
 
-  // Create new decoration types
-  commentStyles.forEach(style => {
-    const decorationType = vscode.window.createTextEditorDecorationType({
-      color: style.color,
-      fontWeight: style.isBold ? 'bold' : fontWeight.toString(),
-      // Ensure consistent font rendering
-      textDecoration: 'none',
-      fontStyle: fontWeight // Explicitly set font style
-    });
-    decorationTypes.set(style.symbol, decorationType);
-  });
+   for (const style of commentStyles) {
+      decorationTypes.set(
+         style.symbol,
+         vscode.window.createTextEditorDecorationType({
+            color: style.color,
+            fontWeight: style.isBold ? 'bold' : fontWeight.toString(),
+            fontStyle: 'normal'
+         })
+      );
+   }
+}
+
+let updateTimer: NodeJS.Timeout | undefined;
+function scheduleUpdate() {
+   clearTimeout(updateTimer);
+   updateTimer = setTimeout(updateDecorations, 150);
 }
 
 function updateDecorations() {
-  const activeEditor = vscode.window.activeTextEditor;
-  if (!activeEditor || !isEnabled) {
-    return;
-  }
+   const editor = vscode.window.activeTextEditor;
+   if (!editor || !isEnabled) return;
 
-  const document = activeEditor.document;
+   const document = editor.document;
 
-  // Clear previous decorations
-  decorationTypes.forEach(decoration => {
-    activeEditor.setDecorations(decoration, []);
-  });
+   /* Ignore Markdown entirely */
+   if (document.languageId === 'markdown') return;
 
-  // Group ranges by decoration type
-  const decorationRanges: Map<string, vscode.Range[]> = new Map();
-  commentStyles.forEach(style => {
-    decorationRanges.set(style.symbol, []);
-  });
+   const syntax = commentSyntaxByLanguage[document.languageId];
+   if (!syntax) return;
 
-  // Process each line
-  for (let lineIndex = 0; lineIndex < document.lineCount; lineIndex++) {
-    const line = document.lineAt(lineIndex);
-    const lineText = line.text;
-    const trimmedLine = lineText.trim();
+   decorationTypes.forEach(d => editor.setDecorations(d, []));
 
-    // Simple comment detection - look for common comment patterns
-    let commentContent = '';
-    let isComment = false;
+   const ranges = new Map<string, vscode.Range[]>();
+   commentStyles.forEach(s => ranges.set(s.symbol, []));
 
-    // Check for // comments
-    const doubleSlashMatch = lineText.match(/^\s*\/\/\s*(.*)$/);
-    if (doubleSlashMatch) {
-      commentContent = doubleSlashMatch[1];
-      isComment = true;
-    }
+   let inBlockComment = false;
 
-    // Check for /* */ single line comments
-    const blockCommentMatch = lineText.match(/^\s*\/\*\s*(.*?)\s*\*\/\s*$/);
-    if (blockCommentMatch) {
-      commentContent = blockCommentMatch[1];
-      isComment = true;
-    }
+   for (let lineNum = 0; lineNum < document.lineCount; lineNum++) {
+      const line = document.lineAt(lineNum);
+      const text = line.text;
 
-    // Check for # comments (Python, shell, etc.)
-    const hashCommentMatch = lineText.match(/^\s*#\s*(.*)$/);
-    if (hashCommentMatch) {
-      commentContent = hashCommentMatch[1];
-      isComment = true;
-    }
+      let commentText: string | null = null;
+      let commentStart = -1;
 
-    // Check for -- comments (SQL, Lua, etc.)
-    const dashCommentMatch = lineText.match(/^\s*--\s*(.*)$/);
-    if (dashCommentMatch) {
-      commentContent = dashCommentMatch[1];
-      isComment = true;
-    }
+      /* ----- BLOCK COMMENTS ----- */
+      if (syntax.block) {
+         if (!inBlockComment && text.includes(syntax.block.start)) {
+            inBlockComment = true;
+            commentStart = text.indexOf(syntax.block.start) + syntax.block.start.length;
+         }
 
-    // Check for <!-- --> HTML comments
-    const htmlCommentMatch = lineText.match(/^\s*<!--\s*(.*?)\s*-->\s*$/);
-    if (htmlCommentMatch) {
-      commentContent = htmlCommentMatch[1];
-      isComment = true;
-    }
+         if (inBlockComment) {
+            commentText = text.slice(commentStart >= 0 ? commentStart : 0);
 
-    if (!isComment) continue;
-
-    console.log(`Found comment on line ${lineIndex}: "${commentContent}"`);
-
-    // Check each style symbol
-    commentStyles.forEach(style => {
-      if (style.symbol === 'TODO:') {
-        // Special handling for TODO: - only make the TODO: part bold
-        if (commentContent.toUpperCase().startsWith('TODO:')) {
-          const todoIndex = lineText.toUpperCase().indexOf('TODO:');
-          if (todoIndex !== -1) {
-            const range = new vscode.Range(
-              new vscode.Position(lineIndex, todoIndex),
-              new vscode.Position(lineIndex, todoIndex + 5) // "TODO:".length
-            );
-            decorationRanges.get(style.symbol)?.push(range);
-            console.log(`Added TODO decoration for line ${lineIndex}`);
-          }
-        }
-      } else {
-        // Regular symbol checking
-        if (commentContent.startsWith(style.symbol)) {
-          const range = new vscode.Range(
-            new vscode.Position(lineIndex, 0),
-            new vscode.Position(lineIndex, lineText.length)
-          );
-          decorationRanges.get(style.symbol)?.push(range);
-          console.log(`Added ${style.symbol} decoration for line ${lineIndex}`);
-        }
+            if (text.includes(syntax.block.end)) {
+               inBlockComment = false;
+            }
+         }
       }
-    });
-  }
 
-  // Apply decorations
-  decorationRanges.forEach((ranges, symbol) => {
-    const decorationType = decorationTypes.get(symbol);
-    if (decorationType && ranges.length > 0) {
-      activeEditor.setDecorations(decorationType, ranges);
-      console.log(`Applied ${ranges.length} decorations for symbol: ${symbol}`);
-    }
-  });
+      /* ----- LINE COMMENTS ----- */
+      if (!commentText && syntax.line) {
+         for (const token of syntax.line) {
+            const idx = text.indexOf(token);
+            if (idx !== -1) {
+               commentStart = idx + token.length;
+               commentText = text.slice(commentStart);
+               break;
+            }
+         }
+      }
+
+      if (!commentText) continue;
+
+      /* Ignore pure block comment end */
+      if (
+         syntax.block &&
+         text.trim() === syntax.block.end
+      ) {
+         continue;
+      }
+
+      for (const style of commentStyles) {
+         if (style.symbol === 'TODO:') {
+            const idx = commentText.toUpperCase().indexOf('TODO:');
+            if (idx !== -1) {
+               ranges.get(style.symbol)?.push(
+                  new vscode.Range(
+                     new vscode.Position(lineNum, commentStart + idx),
+                     new vscode.Position(lineNum, commentStart + idx + 5)
+                  )
+               );
+            }
+         } else if (commentText.trimStart().startsWith(style.symbol)) {
+            ranges.get(style.symbol)?.push(
+               new vscode.Range(
+                  new vscode.Position(lineNum, 0),
+                  new vscode.Position(lineNum, text.length)
+               )
+            );
+         }
+      }
+   }
+
+   ranges.forEach((r, key) => {
+      const deco = decorationTypes.get(key);
+      if (deco && r.length) editor.setDecorations(deco, r);
+   });
 }
 
 function clearDecorations() {
-  const activeEditor = vscode.window.activeTextEditor;
-  if (!activeEditor) return;
-
-  decorationTypes.forEach(decoration => {
-    activeEditor.setDecorations(decoration, []);
-  });
+   const editor = vscode.window.activeTextEditor;
+   if (!editor) return;
+   decorationTypes.forEach(d => editor.setDecorations(d, []));
 }
 
 export function deactivate() {
-  // Clean up decoration types
-  decorationTypes.forEach(decoration => decoration.dispose());
-  decorationTypes.clear();
+   decorationTypes.forEach(d => d.dispose());
+   decorationTypes.clear();
 }
