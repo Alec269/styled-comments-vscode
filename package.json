@@ -2,7 +2,7 @@
    "name": "styled-comments",
    "displayName": "Styled Comments",
    "description": "Highlight comments in different colors within various languages with special symbols - `, ~, !, @, #, $, %, ^, &, *, ?, TODO: ",
-   "version": "2.0.0",
+   "version": "2.5.0",
    "publisher": "Alec269",
    "author": {
       "name": "Nomayer Alam",

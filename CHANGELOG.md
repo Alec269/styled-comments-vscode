@@ -34,7 +34,7 @@ All notable changes to this project will be documented in this file.
   - `*` Important note
   - `!` Warning / alert
   - `@` Mention / reference
-  - `TODO:` Task / reminder (bold + colored)
+  - `TODO:` Task / reminder (bold + coloured)
   - `$` Cost / money related
   - `&` Connection / related info
   - `#` Tag / category
@@ -52,3 +52,19 @@ All notable changes to this project will be documented in this file.
 - Better method of finding comments
 - Improved block and line comment handling consistency
 - More accurate symbol detection at comment start only
+
+## [2.5.0] - 04-03-2026
+
+### Fixed
+
+- Fixed conflict with **Doxygen** & **JSDoc**
+- Highlighting now, only happens **after** the comment symbol, instead of whole line
+
+### Changed
+
+- Expanded language list
+- Highlighting fully **avoids** Doxygen & JSDoc
+
+### New issues !
+
+- `TODO:` no longer  gets highlighted in regular block comments

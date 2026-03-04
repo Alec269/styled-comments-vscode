@@ -15,7 +15,6 @@ node_modules/**
 webpack.config.js
 
 # Documentation that's not needed in the package
-CHANGELOG.md
 .github/**
 
 # Any test or example files

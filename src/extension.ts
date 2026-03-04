@@ -20,14 +20,25 @@ const commentStyles: CommentStyle[] = [
    { symbol: '*', color: '#34c06eff' },
    { symbol: '!', color: '#ce5d50ff' },
    { symbol: '@', color: '#ccad31ff' },
-   { symbol: 'TODO:', color: 'rgb(226, 202, 107)', isBold: true, isLineOnly: true },
-   { symbol: '$', color: 'rgb(179, 117, 204)' },
-   { symbol: '&', color: 'rgb(177, 97, 39)' },
+   { symbol: 'TODO:', color: '#e2ca6b', isBold: true },
+   { symbol: '$', color: '#b375cc' },
+   { symbol: '&', color: '#b16127' },
    { symbol: '#', color: '#e67f59ff' },
    { symbol: '%', color: '#a9d676ff' },
    { symbol: '~', color: '#db89c7ff' },
-   { symbol: '`', color: 'rgb(95, 102, 204)' },
-   { symbol: '^', color: 'rgb(65, 180, 142)' }
+   { symbol: '`', color: '#5f66cc' },
+   { symbol: '^', color: '#41b48e' }
+];
+
+/* ---------- DOXYGEN TAGS TO IGNORE ---------- */
+
+const doxygenTags = [
+   '@param', '@return', '@returns', '@brief', '@file', '@author', '@date',
+   '@version', '@class', '@struct', '@enum', '@var', '@def', '@typedef',
+   '@see', '@note', '@warning', '@deprecated', '@throw', '@throws',
+   '@exception', '@pre', '@post', '@invariant', '@code', '@endcode',
+   '@example', '@since', '@todo', '@bug', '@test', '@namespace',
+   '\\param', '\\return', '\\returns', '\\brief', '\\file', '\\author'
 ];
 
 /* ---------- LANGUAGE COMMENT SYNTAX ---------- */
@@ -36,19 +47,33 @@ const commentStyles: CommentStyle[] = [
 const commentSyntaxByLanguage: Record<string, CommentSyntax> = {
    javascript: { line: ['//'], block: { start: '/*', end: '*/' } },
    typescript: { line: ['//'], block: { start: '/*', end: '*/' } },
+   javascriptreact: { line: ['//'], block: { start: '/*', end: '*/' } },
+   typescriptreact: { line: ['//'], block: { start: '/*', end: '*/' } },
+   dart: { line: ['//'], block: { start: '/*', end: '*/' } },
+   csharp: { line: ['//'], block: { start: '/*', end: '*/' } },
+   //
    c: { line: ['//'], block: { start: '/*', end: '*/' } },
    cpp: { line: ['//'], block: { start: '/*', end: '*/' } },
-   rust: { line: ['//'], block: { start: '/*', end: '*/' } },
-   python: { line: ['#'] },
-   shellscript: { line: ['#'] },
-   lua: { line: ['--'] },
-   sql: { line: ['--'] },
    asm: { line: [';'] },
    nasm: { line: [';'] },
    gas: { line: ['#', ';'] },
-   html: { line: ['<!--'] },
+   rust: { line: ['//'], block: { start: '/*', end: '*/' } },
+   zig: { line: ['//'] },
+   odin: { line: ['//'] },
    llvm: { line: [';'] },
-   plaintext: { line: ['#;'] }
+   //
+   powershell: { line: ['#'] },
+   shellscript: { line: ['#'] },
+   //
+   python: { line: ['#'] },
+   cmake: { line: ['#'] },
+   lua: { line: ['--'] },
+   jsonc: { line: ['//'] },
+   //
+   sql: { line: ['--'] },
+   html: { line: ['<!--'] },
+   css: { block: { start: '/*', end: '*/' } },
+   plaintext: { line: ['#;'] },
 };
 
 /* ---------- STATE ---------- */
@@ -123,6 +148,11 @@ function scheduleUpdate() {
    updateTimer = setTimeout(updateDecorations, 150);
 }
 
+function isDoxygenComment(commentText: string): boolean {
+   const trimmed = commentText.trim();
+   return doxygenTags.some(tag => trimmed.startsWith(tag));
+}
+
 function updateDecorations() {
    const editor = vscode.window.activeTextEditor;
    if (!editor || !isEnabled) return;
@@ -141,6 +171,7 @@ function updateDecorations() {
    commentStyles.forEach(s => ranges.set(s.symbol, []));
 
    let inBlockComment = false;
+   let inDoxygenBlock = false;
 
    for (let lineNum = 0; lineNum < document.lineCount; lineNum++) {
       const line = document.lineAt(lineNum);
@@ -152,11 +183,27 @@ function updateDecorations() {
       /* ----- BLOCK COMMENTS ----- */
       if (syntax.block) {
          if (!inBlockComment && text.includes(syntax.block.start)) {
+            /* Check if this is a Doxygen block comment (/** or /*!) */
+            const blockStartIdx = text.indexOf(syntax.block.start);
+            const afterStart = text.slice(blockStartIdx + syntax.block.start.length);
+            if (afterStart.startsWith('*') || afterStart.startsWith('!')) {
+               inDoxygenBlock = true;
+            }
+
             inBlockComment = true;
-            commentStart = text.indexOf(syntax.block.start) + syntax.block.start.length;
+            commentStart = blockStartIdx + syntax.block.start.length;
          }
 
          if (inBlockComment) {
+            /* Skip highlighting if we're in a Doxygen block */
+            if (inDoxygenBlock) {
+               if (text.includes(syntax.block.end)) {
+                  inBlockComment = false;
+                  inDoxygenBlock = false;
+               }
+               continue;
+            }
+
             commentText = text.slice(commentStart >= 0 ? commentStart : 0);
 
             if (text.includes(syntax.block.end)) {
@@ -190,7 +237,7 @@ function updateDecorations() {
       for (const style of commentStyles) {
          if (style.symbol === 'TODO:') {
             const idx = commentText.toUpperCase().indexOf('TODO:');
-            if (idx !== -1) {
+            if (idx !== -1 && commentStart >= 0) {
                ranges.get(style.symbol)?.push(
                   new vscode.Range(
                      new vscode.Position(lineNum, commentStart + idx),
@@ -199,9 +246,12 @@ function updateDecorations() {
                );
             }
          } else if (commentText.trimStart().startsWith(style.symbol)) {
+            /* FIX: Only color the comment portion, not the entire line */
+            /* Ensure commentStart is valid (>= 0) before creating range */
+            const startPos = commentStart >= 0 ? commentStart : 0;
             ranges.get(style.symbol)?.push(
                new vscode.Range(
-                  new vscode.Position(lineNum, 0),
+                  new vscode.Position(lineNum, startPos),
                   new vscode.Position(lineNum, text.length)
                )
             );
