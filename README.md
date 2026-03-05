@@ -35,6 +35,9 @@ Currently This supports the following languages `id`(s) :
 
 - `dart`
 - `csharp`
+- `java`
+- `go`
+- `groovy`
 - `c`
 - `cpp`
 - `asm`

@@ -51,16 +51,19 @@ const commentSyntaxByLanguage: Record<string, CommentSyntax> = {
    typescriptreact: { line: ['//'], block: { start: '/*', end: '*/' } },
    dart: { line: ['//'], block: { start: '/*', end: '*/' } },
    csharp: { line: ['//'], block: { start: '/*', end: '*/' } },
+   java: { line: ['//'], block: { start: '/*', end: '*/' } },
+   go: { line: ['//'], block: { start: '/*', end: '*/' } },
+   groovy: { line: ['//'], block: { start: '/*', end: '*/' } },
    //
    c: { line: ['//'], block: { start: '/*', end: '*/' } },
    cpp: { line: ['//'], block: { start: '/*', end: '*/' } },
    asm: { line: [';'] },
    nasm: { line: [';'] },
+   llvm: { line: [';'] },
    gas: { line: ['#', ';'] },
    rust: { line: ['//'], block: { start: '/*', end: '*/' } },
    zig: { line: ['//'] },
    odin: { line: ['//'] },
-   llvm: { line: [';'] },
    //
    powershell: { line: ['#'] },
    shellscript: { line: ['#'] },
@@ -180,6 +183,17 @@ function updateDecorations() {
       let commentText: string | null = null;
       let commentStart = -1;
 
+      /* ----- LINE COMMENTS ----- */
+      if (!commentText && syntax.line) {
+         for (const token of syntax.line) {
+            const idx = text.indexOf(token);
+            if (idx !== -1) {
+               commentStart = idx + token.length;
+               commentText = text.slice(commentStart);
+               break;
+            }
+         }
+      }
       /* ----- BLOCK COMMENTS ----- */
       if (syntax.block) {
          if (!inBlockComment && text.includes(syntax.block.start)) {
@@ -200,6 +214,7 @@ function updateDecorations() {
                if (text.includes(syntax.block.end)) {
                   inBlockComment = false;
                   inDoxygenBlock = false;
+                  commentStart = -1; // Reset after block ends
                }
                continue;
             }
@@ -208,21 +223,12 @@ function updateDecorations() {
 
             if (text.includes(syntax.block.end)) {
                inBlockComment = false;
+               commentStart = -1; // Reset after block ends
             }
          }
       }
 
-      /* ----- LINE COMMENTS ----- */
-      if (!commentText && syntax.line) {
-         for (const token of syntax.line) {
-            const idx = text.indexOf(token);
-            if (idx !== -1) {
-               commentStart = idx + token.length;
-               commentText = text.slice(commentStart);
-               break;
-            }
-         }
-      }
+
 
       if (!commentText) continue;
 

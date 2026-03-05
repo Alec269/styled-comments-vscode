@@ -65,6 +65,22 @@ All notable changes to this project will be documented in this file.
 - Expanded language list
 - Highlighting fully **avoids** Doxygen & JSDoc
 
-### New issues !
+### New issues
 
 - `TODO:` no longer  gets highlighted in regular block comments
+
+## [2.6.0] - 05-03-2026
+
+### Fixed
+
+- Fixed newly discovered Issue with symbol recognition in line comments
+- Extension should now behave as expected
+
+### Changed
+
+- Expanded language list to also support: `java`,`groovy`,`go`
+
+### Existing issues
+
+- `TODO:` still don't get highlighted in regular block comments
+  - *Temporary fix* : add `//` before `TODO:` in block comments
