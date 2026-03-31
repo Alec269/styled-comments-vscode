@@ -30,6 +30,36 @@ const commentStyles: CommentStyle[] = [
    { symbol: '^', color: '#41b48e' }
 ];
 
+/* ---------- MARKDOWN-LIKE INLINE PATTERNS ---------- */
+
+interface MarkdownPattern {
+   key: string;
+   regex: RegExp;
+   color: string;
+   fontStyle?: string;
+   fontWeight?: string;
+}
+
+const markdownPatterns: MarkdownPattern[] = [
+   {
+      key: 'md_bold',
+      regex: /\*\*(.+?)\*\*/g,
+      color: '#d19a66',
+      fontWeight: 'bold'
+   },
+   {
+      key: 'md_italic',
+      regex: /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,
+      color: '#bc78bb',
+      fontStyle: 'italic'
+   },
+   {
+      key: 'md_code',
+      regex: /`([^`]+)`/g,
+      color: '#94c379'
+   }
+];
+
 /* ---------- DOXYGEN TAGS TO IGNORE ---------- */
 
 const doxygenTags = [
@@ -83,11 +113,13 @@ const commentSyntaxByLanguage: Record<string, CommentSyntax> = {
 
 let decorationTypes = new Map<string, vscode.TextEditorDecorationType>();
 let isEnabled = true;
+let markdownHighlightsEnabled = true;
 
 /* ---------- ACTIVATE ---------- */
 
 export function activate(context: vscode.ExtensionContext) {
    isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
+   markdownHighlightsEnabled = vscode.workspace.getConfiguration().get('styledComments.markdownHighlights', true);
 
    initializeDecorationTypes();
 
@@ -108,6 +140,10 @@ export function activate(context: vscode.ExtensionContext) {
          if (e.affectsConfiguration('styledComments.enabled')) {
             isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
             isEnabled ? updateDecorations() : clearDecorations();
+         }
+         if (e.affectsConfiguration('styledComments.markdownHighlights')) {
+            markdownHighlightsEnabled = vscode.workspace.getConfiguration().get('styledComments.markdownHighlights', true);
+            updateDecorations();
          }
       }),
 
@@ -143,6 +179,18 @@ function initializeDecorationTypes() {
          })
       );
    }
+
+   /* Markdown-like inline decoration types */
+   for (const pattern of markdownPatterns) {
+      decorationTypes.set(
+         pattern.key,
+         vscode.window.createTextEditorDecorationType({
+            color: pattern.color,
+            fontWeight: pattern.fontWeight ?? 'normal',
+            fontStyle: pattern.fontStyle ?? 'normal'
+         })
+      );
+   }
 }
 
 let updateTimer: NodeJS.Timeout | undefined;
@@ -154,6 +202,13 @@ function scheduleUpdate() {
 function isDoxygenComment(commentText: string): boolean {
    const trimmed = commentText.trim();
    return doxygenTags.some(tag => trimmed.startsWith(tag));
+}
+
+/* Returns true if the comment text (after the comment token) starts with
+   one of the styled-comment symbols, meaning markdown patterns are allowed. */
+function hasStyledSymbol(commentText: string): boolean {
+   const trimmed = commentText.trimStart();
+   return trimmed.length > 0 && /^[^a-zA-Z0-9\s]/.test(trimmed);
 }
 
 function updateDecorations() {
@@ -172,6 +227,7 @@ function updateDecorations() {
 
    const ranges = new Map<string, vscode.Range[]>();
    commentStyles.forEach(s => ranges.set(s.symbol, []));
+   markdownPatterns.forEach(p => ranges.set(p.key, []));
 
    let inBlockComment = false;
    let inDoxygenBlock = false;
@@ -194,10 +250,10 @@ function updateDecorations() {
             }
          }
       }
+
       /* ----- BLOCK COMMENTS ----- */
       if (syntax.block) {
          if (!inBlockComment && text.includes(syntax.block.start)) {
-            /* Check if this is a Doxygen block comment (/** or /*!) */
             const blockStartIdx = text.indexOf(syntax.block.start);
             const afterStart = text.slice(blockStartIdx + syntax.block.start.length);
             if (afterStart.startsWith('*') || afterStart.startsWith('!')) {
@@ -209,37 +265,35 @@ function updateDecorations() {
          }
 
          if (inBlockComment) {
-            /* Skip highlighting if we're in a Doxygen block */
             if (inDoxygenBlock) {
                if (text.includes(syntax.block.end)) {
                   inBlockComment = false;
                   inDoxygenBlock = false;
-                  commentStart = -1; // Reset after block ends
+                  commentStart = -1;
                }
                continue;
             }
 
-            commentText = text.slice(commentStart >= 0 ? commentStart : 0);
+            // For continuation lines, commentStart was never set this iteration
+            if (commentStart === -1) {
+               commentStart = 0;
+            }
+
+            commentText = text.slice(commentStart);
 
             if (text.includes(syntax.block.end)) {
                inBlockComment = false;
-               commentStart = -1; // Reset after block ends
+               commentStart = -1;
             }
          }
       }
 
-
-
       if (!commentText) continue;
 
       /* Ignore pure block comment end */
-      if (
-         syntax.block &&
-         text.trim() === syntax.block.end
-      ) {
-         continue;
-      }
+      if (syntax.block && text.trim() === syntax.block.end) continue;
 
+      /* ----- STYLED SYMBOL RANGES ----- */
       for (const style of commentStyles) {
          if (style.symbol === 'TODO:') {
             const idx = commentText.toUpperCase().indexOf('TODO:');
@@ -252,15 +306,81 @@ function updateDecorations() {
                );
             }
          } else if (commentText.trimStart().startsWith(style.symbol)) {
-            /* FIX: Only color the comment portion, not the entire line */
-            /* Ensure commentStart is valid (>= 0) before creating range */
-            const startPos = commentStart >= 0 ? commentStart : 0;
-            ranges.get(style.symbol)?.push(
-               new vscode.Range(
-                  new vscode.Position(lineNum, startPos),
-                  new vscode.Position(lineNum, text.length)
-               )
-            );
+   const startPos = commentStart >= 0 ? commentStart : 0;
+
+   if (markdownHighlightsEnabled) {
+      // Collect all md match spans on this line
+      const mdSpans: { start: number; end: number }[] = [];
+      for (const pattern of markdownPatterns) {
+         pattern.regex.lastIndex = 0;
+         let m: RegExpExecArray | null;
+         while ((m = pattern.regex.exec(commentText)) !== null) {
+            mdSpans.push({
+               start: startPos + m.index,
+               end: startPos + m.index + m[0].length
+            });
+         }
+      }
+      mdSpans.sort((a, b) => a.start - b.start);
+
+      // Fill gaps between md spans with the symbol color
+      let cursor = startPos;
+      for (const span of mdSpans) {
+         if (cursor < span.start) {
+            ranges.get(style.symbol)?.push(new vscode.Range(
+               new vscode.Position(lineNum, cursor),
+               new vscode.Position(lineNum, span.start)
+            ));
+         }
+         cursor = span.end;
+      }
+      if (cursor < text.length) {
+         ranges.get(style.symbol)?.push(new vscode.Range(
+            new vscode.Position(lineNum, cursor),
+            new vscode.Position(lineNum, text.length)
+         ));
+      }
+   } else {
+      // md highlights off — just color the whole line
+      ranges.get(style.symbol)?.push(new vscode.Range(
+         new vscode.Position(lineNum, startPos),
+         new vscode.Position(lineNum, text.length)
+      ));
+   }
+}
+      }
+
+      /* ----- MARKDOWN-LIKE INLINE RANGES ----- */
+      if (markdownHighlightsEnabled && hasStyledSymbol(commentText)) {
+         const baseOffset = commentStart >= 0 ? commentStart : 0;
+
+         for (const pattern of markdownPatterns) {
+            pattern.regex.lastIndex = 0;
+            let match: RegExpExecArray | null;
+
+            while ((match = pattern.regex.exec(commentText)) !== null) {
+               let start: number;
+               let end: number;
+
+               if (pattern.key === 'md_bold') {
+                  start = baseOffset + match.index + 2;
+                  end = baseOffset + match.index + match[0].length - 2;
+               } else if (pattern.key === 'md_italic') {
+                  start = baseOffset + match.index + 1;
+                  end = baseOffset + match.index + match[0].length - 1;
+               } else {
+                  // md_code: color the whole `stuff` including backticks
+                  start = baseOffset + match.index;
+                  end = baseOffset + match.index + match[0].length;
+               }
+
+               ranges.get(pattern.key)?.push(
+                  new vscode.Range(
+                     new vscode.Position(lineNum, start),
+                     new vscode.Position(lineNum, end)
+                  )
+               );
+            }
          }
       }
    }

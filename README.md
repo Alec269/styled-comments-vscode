@@ -1,6 +1,6 @@
 # Styled Comments
 
-Highlight specially marked comments in different colours to make notes, warnings, TODOs, and annotations stand out while coding. And it doesn't affect Doxygen or JSDoc.
+Highlight specially marked comments in different colours to make *notes*, *warnings*, *TODOs*, and *annotations* stand out while coding. And it *doesn't* affect **Doxygen** or **JSDoc**. **MarkDown Delimiters** are also supported.
 
 ![Example](images/ExampleImage.png)
 
@@ -12,19 +12,27 @@ Example for text files:
 
 ![Example](images/textEg.png)
 
-### Supported symbols
+### Simple Markdown support
+
+You can use **Markdown delimiters** (`` ` ``, `*`, `**`) to format words like Markdown. This is supported with line **highlighters**/**decorators** ( `?`, `*`, `!`, `@`, `$`, `&` , `#`, `%`, `~`, `` ` ``, `^`).  
+
+However the comment line *must start* with any **non-Alphanumeric symbol**. If you have a **Alphanumeric** (`abcd...`,`123...`) in front of the comment line then you'll have use a **Full stop**(`.`). [ *period in american English* ]
+
+![md Showcase](images/mdExample.png)
+
+### Supported Decorator symbols
 
 | Symbol | Meaning | Style |
-|------  |-------- |-------|
+|--------|---------|-------|
 | `?` | Question / uncertainty | Blue |
-| `*` | Important note | Lime green |
+| `*` | Important note | green |
 | `!` | Warning / alert | Red |
 | `@` | Mention / reference | Yellow |
 | `TODO:` | Task / reminder | **Bold + yellow** |
 | `$` | Cost / money related | Purple |
 | `&` | Connection / related info | Brown |
 | `#` | Tag / category | Orange |
-| `%` | Performance / metrics | Light green |
+| `%` | Performance / metrics | Lime green |
 | `~` | Approximate / soft note | Pink |
 | `` ` `` | Code / technical detail | Blue |
 | `^` | Improvement / optimization | Teal |
@@ -81,4 +89,35 @@ Simply place one of the supported symbols **at the start of a comment**.
 <code style="color : #5f66cc">// ` This involves low-level code</code><br>
 <code style="color : #41b48e">// ^ Can be optimized later</code>
 
-- Same can be done with block comments.
+- Same can be done with *block comments*.
+
+### Simple Markdown
+
+- use `` ` `` delimiter for highlighting a single word Green
+- use `` * `` delimiter for highlighting a single word Purple and *italic*
+- use `` ** `` delimiter for highlighting a single word Gold and **Bold**
+
+## Known Issues
+
+1. `*` specifically requires that you write like:
+
+```sh
+// *
+```
+
+and not like this:
+
+```sh
+//*
+```
+
+## contributions
+
+I would love any help you can provide.
+You can help by,
+
+- Starring the project on [Github](https://github.com/Alec269/styled-comments-vscode.git)
+- Finding and reporting [issues](https://github.com/Alec269/styled-comments-vscode/issues)
+- Suggesting possible fixes for known [issues](https://github.com/Alec269/styled-comments-vscode/issues)
+
+😢 I'm sorry if there are issues that haven't been fixed, yet. I'm just a student and I'm not good at `Typescript`.

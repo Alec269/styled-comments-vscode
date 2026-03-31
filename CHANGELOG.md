@@ -84,3 +84,21 @@ All notable changes to this project will be documented in this file.
 
 - `TODO:` still don't get highlighted in regular block comments
   - *Temporary fix* : add `//` before `TODO:` in block comments
+
+## [2.7.0] - 31-03-2026
+
+### Added
+
+- Support for **Markdown Delimiters** (`` ` ``, `*`, `**`).
+  - `` ` `` delimiter highlights a single word Green
+  - `` * `` delimiter highlights a single word Purple and *italic*
+  - `` ** `` delimiter highlights a single word Gold and **Bold**
+
+### Fixed issues
+
+- `TODO:` now, get highlighted in regular block comments
+
+### New issues
+
+- `*` specifically requires that you write like: `// *`, and not like this: `//*`
+  - *Temporary fix* : add a space between `//` and `*` symbol.
