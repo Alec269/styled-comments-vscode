@@ -10,10 +10,30 @@ interface CommentStyle {
 
 interface CommentSyntax {
    line?: string[];
-   block?: { start: string; end: string };
+   block?: {
+      start: string;
+      end: string
+   } [];
 }
 
-/* ---------- COMMENT STYLES ---------- */
+// ---------- STATE ---------- //
+interface ExtensionState {
+   decorationTypes: Map<string, vscode.TextEditorDecorationType>;
+   isEnabled: boolean;
+   markdownHighlightsEnabled: boolean;
+   updateTimer: NodeJS.Timeout | undefined;
+}
+
+// ---------- MD Pattern ---------- //
+interface MarkdownPattern {
+   key: string;
+   regex: RegExp;
+   color: string;
+   fontStyle?: string;
+   fontWeight?: string;
+}
+
+// ---------- *Comment Decorator styles* ---------- //
 
 const commentStyles: CommentStyle[] = [
    { symbol: '?', color: '#449edaff' },
@@ -30,15 +50,8 @@ const commentStyles: CommentStyle[] = [
    { symbol: '^', color: '#41b48e' }
 ];
 
-/* ---------- MARKDOWN-LIKE INLINE PATTERNS ---------- */
+// ---------- *MarkDown Delimiter* Patterns ---------- //
 
-interface MarkdownPattern {
-   key: string;
-   regex: RegExp;
-   color: string;
-   fontStyle?: string;
-   fontWeight?: string;
-}
 
 const markdownPatterns: MarkdownPattern[] = [
    {
@@ -60,7 +73,7 @@ const markdownPatterns: MarkdownPattern[] = [
    }
 ];
 
-/* ---------- DOXYGEN TAGS TO IGNORE ---------- */
+/* ---------- Doxygen Tags To Ignore ---------- */
 
 const doxygenTags = [
    '@param', '@return', '@returns', '@brief', '@file', '@author', '@date',
@@ -71,27 +84,26 @@ const doxygenTags = [
    '\\param', '\\return', '\\returns', '\\brief', '\\file', '\\author'
 ];
 
-/* ---------- LANGUAGE COMMENT SYNTAX ---------- */
-/* Markdown intentionally excluded */
+/* ---------- Lang specific Comment Syntax ---------- */
 
 const commentSyntaxByLanguage: Record<string, CommentSyntax> = {
-   javascript: { line: ['//'], block: { start: '/*', end: '*/' } },
-   typescript: { line: ['//'], block: { start: '/*', end: '*/' } },
-   javascriptreact: { line: ['//'], block: { start: '/*', end: '*/' } },
-   typescriptreact: { line: ['//'], block: { start: '/*', end: '*/' } },
-   dart: { line: ['//'], block: { start: '/*', end: '*/' } },
-   csharp: { line: ['//'], block: { start: '/*', end: '*/' } },
-   java: { line: ['//'], block: { start: '/*', end: '*/' } },
-   go: { line: ['//'], block: { start: '/*', end: '*/' } },
-   groovy: { line: ['//'], block: { start: '/*', end: '*/' } },
+   javascript: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   typescript: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   javascriptreact: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   typescriptreact: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   dart: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   csharp: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   java: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   go: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   groovy: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
    //
-   c: { line: ['//'], block: { start: '/*', end: '*/' } },
-   cpp: { line: ['//'], block: { start: '/*', end: '*/' } },
+   c: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
+   cpp: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
    asm: { line: [';'] },
    nasm: { line: [';'] },
    llvm: { line: [';'] },
    gas: { line: ['#', ';'] },
-   rust: { line: ['//'], block: { start: '/*', end: '*/' } },
+   rust: { line: ['//'], block: [{ start: '/*', end: '*/' }] },
    zig: { line: ['//'] },
    odin: { line: ['//'] },
    //
@@ -104,85 +116,107 @@ const commentSyntaxByLanguage: Record<string, CommentSyntax> = {
    jsonc: { line: ['//'] },
    //
    sql: { line: ['--'] },
-   html: { line: ['<!--'] },
-   css: { block: { start: '/*', end: '*/' } },
+   html: { block: [{ start: '<!--', end: '-->' }] },
+   php: {
+      line: ["//"], block: [
+         { start: '/*', end: '*/' },
+         { start: '<!--', end: '-->' }
+      ]
+   },
+   css: { block: [{ start: '/*', end: '*/' }] },
    plaintext: { line: ['#;'] },
 };
+// Markdown intentionally excluded 
 
-/* ---------- STATE ---------- */
 
-let decorationTypes = new Map<string, vscode.TextEditorDecorationType>();
-let isEnabled = true;
-let markdownHighlightsEnabled = true;
+
 
 /* ---------- ACTIVATE ---------- */
 
-export function activate(context: vscode.ExtensionContext) {
-   isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
-   markdownHighlightsEnabled = vscode.workspace.getConfiguration().get('styledComments.markdownHighlights', true);
+/// Basically the `main()` function of a *vscode extension*
 
-   initializeDecorationTypes();
+export function activate(context: vscode.ExtensionContext) {
+
+   const eState: ExtensionState = {
+      decorationTypes: new Map(),
+      isEnabled: true,
+      markdownHighlightsEnabled: true,
+      updateTimer: undefined
+   };
+
+   initializeDecorationTypes(eState);
+   // get feature activation statuses
+   eState.isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
+   eState.markdownHighlightsEnabled = vscode.workspace.getConfiguration().get('styledComments.markdownHighlights', true);
+
 
    context.subscriptions.push(
       vscode.commands.registerCommand('styledComments.enable', () => {
-         isEnabled = true;
+         eState.isEnabled = true;
          vscode.workspace.getConfiguration().update('styledComments.enabled', true, true);
-         updateDecorations();
+         updateDecorations(eState);
       }),
 
       vscode.commands.registerCommand('styledComments.disable', () => {
-         isEnabled = false;
+         eState.isEnabled = false;
          vscode.workspace.getConfiguration().update('styledComments.enabled', false, true);
-         clearDecorations();
+         clearDecorations(eState);
       }),
 
       vscode.workspace.onDidChangeConfiguration(e => {
          if (e.affectsConfiguration('styledComments.enabled')) {
-            isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
-            isEnabled ? updateDecorations() : clearDecorations();
+            eState.isEnabled = vscode.workspace.getConfiguration().get('styledComments.enabled', true);
+            eState.isEnabled ? updateDecorations(eState) : clearDecorations(eState);
          }
          if (e.affectsConfiguration('styledComments.markdownHighlights')) {
-            markdownHighlightsEnabled = vscode.workspace.getConfiguration().get('styledComments.markdownHighlights', true);
-            updateDecorations();
+            eState.markdownHighlightsEnabled = vscode.workspace.getConfiguration().get('styledComments.markdownHighlights', true);
+            updateDecorations(eState);
          }
       }),
 
       vscode.workspace.onDidChangeTextDocument(e => {
-         if (isEnabled && e.document === vscode.window.activeTextEditor?.document) {
-            scheduleUpdate();
+         if (eState.isEnabled && e.document === vscode.window.activeTextEditor?.document) {
+            scheduleUpdate(eState);
          }
       }),
 
       vscode.window.onDidChangeActiveTextEditor(() => {
-         if (isEnabled) scheduleUpdate();
+         if (eState.isEnabled) {
+            scheduleUpdate(eState);
+         }
       })
    );
 
-   scheduleUpdate();
+   scheduleUpdate(eState);
 }
 
 /* ---------- DECORATIONS ---------- */
 
-function initializeDecorationTypes() {
-   decorationTypes.forEach(d => d.dispose());
-   decorationTypes.clear();
+function initializeDecorationTypes(eState: ExtensionState) {
+   eState.decorationTypes.forEach((val, key) => val.dispose()); // removing decoration styles on screen
+   eState.decorationTypes.clear();
 
+   // get the user's fontWeight, else assume 400
    const fontWeight = vscode.workspace.getConfiguration('editor').get('fontWeight', '400');
 
+
+
+
+   // define comment decoration types
    for (const style of commentStyles) {
-      decorationTypes.set(
+      eState.decorationTypes.set(
          style.symbol,
          vscode.window.createTextEditorDecorationType({
             color: style.color,
             fontWeight: style.isBold ? 'bold' : fontWeight.toString(),
-            fontStyle: 'normal'
+            fontStyle: 'normal',
          })
       );
    }
 
-   /* Markdown-like inline decoration types */
+   // Define Markdown-like inline decoration types 
    for (const pattern of markdownPatterns) {
-      decorationTypes.set(
+      eState.decorationTypes.set(
          pattern.key,
          vscode.window.createTextEditorDecorationType({
             color: pattern.color,
@@ -191,39 +225,53 @@ function initializeDecorationTypes() {
          })
       );
    }
+} //^ initializeDecorationTypes()
+
+
+function scheduleUpdate(eState: ExtensionState) {
+   // here we clear any existing schedules
+   clearTimeout(eState.updateTimer);
+   /// ad new one with a delay. [*debouncing*]
+   eState.updateTimer = setTimeout(() => updateDecorations(eState), 150);
 }
 
-let updateTimer: NodeJS.Timeout | undefined;
-function scheduleUpdate() {
-   clearTimeout(updateTimer);
-   updateTimer = setTimeout(updateDecorations, 150);
-}
-
+// 
 function isDoxygenComment(commentText: string): boolean {
    const trimmed = commentText.trim();
-   return doxygenTags.some(tag => trimmed.startsWith(tag));
+   const startsWith = (tag: string) => trimmed.startsWith(tag);
+   ///`some()` = returns true if one item satisfies condition
+   return doxygenTags.some(startsWith);;
 }
 
-/* Returns true if the comment text (after the comment token) starts with
-   one of the styled-comment symbols, meaning markdown patterns are allowed. */
+/* 
+   Returns true if the comment text (after the comment token) starts with
+   one of the styled-comment symbols, meaning markdown patterns are allowed. 
+*/
 function hasStyledSymbol(commentText: string): boolean {
-   const trimmed = commentText.trimStart();
-   return trimmed.length > 0 && /^[^a-zA-Z0-9\s]/.test(trimmed);
+   const trimmedTxt = commentText.trimStart();
+   const startsWithSymbol = /^[^a-zA-Z0-9\s]/.test(trimmedTxt);
+   return (trimmedTxt.length > 0 && startsWithSymbol);
 }
 
-function updateDecorations() {
+function updateDecorations(eState: ExtensionState) {
    const editor = vscode.window.activeTextEditor;
-   if (!editor || !isEnabled) return;
 
+   if (!editor || !eState.isEnabled) {
+      return;
+   }
    const document = editor.document;
 
    /* Ignore Markdown entirely */
-   if (document.languageId === 'markdown') return;
+   if (document.languageId === 'markdown') {
+      return;
+   }
 
    const syntax = commentSyntaxByLanguage[document.languageId];
-   if (!syntax) return;
+   if (!syntax) {
+      return;
+   }
 
-   decorationTypes.forEach(d => editor.setDecorations(d, []));
+   eState.decorationTypes.forEach(d => editor.setDecorations(d, []));
 
    const ranges = new Map<string, vscode.Range[]>();
    commentStyles.forEach(s => ranges.set(s.symbol, []));
@@ -231,6 +279,7 @@ function updateDecorations() {
 
    let inBlockComment = false;
    let inDoxygenBlock = false;
+   let activeBlockEnd: string | null = null;
 
    for (let lineNum = 0; lineNum < document.lineCount; lineNum++) {
       const line = document.lineAt(lineNum);
@@ -253,45 +302,55 @@ function updateDecorations() {
 
       /* ----- BLOCK COMMENTS ----- */
       if (syntax.block) {
-         if (!inBlockComment && text.includes(syntax.block.start)) {
-            const blockStartIdx = text.indexOf(syntax.block.start);
-            const afterStart = text.slice(blockStartIdx + syntax.block.start.length);
-            if (afterStart.startsWith('*') || afterStart.startsWith('!')) {
-               inDoxygenBlock = true;
+         if (!inBlockComment) {
+            for (const blockSyntax of syntax.block) {
+               if (text.includes(blockSyntax.start)) {
+                  const blockStartIdx = text.indexOf(blockSyntax.start);
+                  const afterStart = text.slice(blockStartIdx + blockSyntax.start.length);
+                  if (afterStart.startsWith('*') || afterStart.startsWith('!')) {
+                     inDoxygenBlock = true;
+                  }
+                  inBlockComment = true;
+                  activeBlockEnd = blockSyntax.end;
+                  commentStart = blockStartIdx + blockSyntax.start.length;
+                  break;
+               }
             }
-
-            inBlockComment = true;
-            commentStart = blockStartIdx + syntax.block.start.length;
          }
 
-         if (inBlockComment) {
+         if (inBlockComment && activeBlockEnd) {
             if (inDoxygenBlock) {
-               if (text.includes(syntax.block.end)) {
+               if (text.includes(activeBlockEnd)) {
                   inBlockComment = false;
                   inDoxygenBlock = false;
+                  activeBlockEnd = null;
                   commentStart = -1;
                }
                continue;
             }
 
-            // For continuation lines, commentStart was never set this iteration
             if (commentStart === -1) {
                commentStart = 0;
             }
 
             commentText = text.slice(commentStart);
 
-            if (text.includes(syntax.block.end)) {
+            if (text.includes(activeBlockEnd)) {
                inBlockComment = false;
+               activeBlockEnd = null;
                commentStart = -1;
             }
          }
       }
 
-      if (!commentText) continue;
+      if (!commentText) {
+         continue;
+      }
 
       /* Ignore pure block comment end */
-      if (syntax.block && text.trim() === syntax.block.end) continue;
+      if (syntax.block && syntax.block.some(b => text.trim() === b.end)) {
+         continue;
+      }
 
       /* ----- STYLED SYMBOL RANGES ----- */
       for (const style of commentStyles) {
@@ -306,52 +365,52 @@ function updateDecorations() {
                );
             }
          } else if (commentText.trimStart().startsWith(style.symbol)) {
-   const startPos = commentStart >= 0 ? commentStart : 0;
+            const startPos = commentStart >= 0 ? commentStart : 0;
 
-   if (markdownHighlightsEnabled) {
-      // Collect all md match spans on this line
-      const mdSpans: { start: number; end: number }[] = [];
-      for (const pattern of markdownPatterns) {
-         pattern.regex.lastIndex = 0;
-         let m: RegExpExecArray | null;
-         while ((m = pattern.regex.exec(commentText)) !== null) {
-            mdSpans.push({
-               start: startPos + m.index,
-               end: startPos + m.index + m[0].length
-            });
-         }
-      }
-      mdSpans.sort((a, b) => a.start - b.start);
+            if (eState.markdownHighlightsEnabled) {
+               // Collect all md match spans on this line
+               const mdSpans: { start: number; end: number }[] = [];
+               for (const pattern of markdownPatterns) {
+                  pattern.regex.lastIndex = 0;
+                  let m: RegExpExecArray | null;
+                  while ((m = pattern.regex.exec(commentText)) !== null) {
+                     mdSpans.push({
+                        start: startPos + m.index,
+                        end: startPos + m.index + m[0].length
+                     });
+                  }
+               }
+               mdSpans.sort((a, b) => a.start - b.start);
 
-      // Fill gaps between md spans with the symbol color
-      let cursor = startPos;
-      for (const span of mdSpans) {
-         if (cursor < span.start) {
-            ranges.get(style.symbol)?.push(new vscode.Range(
-               new vscode.Position(lineNum, cursor),
-               new vscode.Position(lineNum, span.start)
-            ));
+               // Fill gaps between md spans with the symbol color
+               let cursor = startPos;
+               for (const span of mdSpans) {
+                  if (cursor < span.start) {
+                     ranges.get(style.symbol)?.push(new vscode.Range(
+                        new vscode.Position(lineNum, cursor),
+                        new vscode.Position(lineNum, span.start)
+                     ));
+                  }
+                  cursor = span.end;
+               }
+               if (cursor < text.length) {
+                  ranges.get(style.symbol)?.push(new vscode.Range(
+                     new vscode.Position(lineNum, cursor),
+                     new vscode.Position(lineNum, text.length)
+                  ));
+               }
+            } else {
+               // md highlights off — just color the whole line
+               ranges.get(style.symbol)?.push(new vscode.Range(
+                  new vscode.Position(lineNum, startPos),
+                  new vscode.Position(lineNum, text.length)
+               ));
+            }
          }
-         cursor = span.end;
-      }
-      if (cursor < text.length) {
-         ranges.get(style.symbol)?.push(new vscode.Range(
-            new vscode.Position(lineNum, cursor),
-            new vscode.Position(lineNum, text.length)
-         ));
-      }
-   } else {
-      // md highlights off — just color the whole line
-      ranges.get(style.symbol)?.push(new vscode.Range(
-         new vscode.Position(lineNum, startPos),
-         new vscode.Position(lineNum, text.length)
-      ));
-   }
-}
       }
 
       /* ----- MARKDOWN-LIKE INLINE RANGES ----- */
-      if (markdownHighlightsEnabled && hasStyledSymbol(commentText)) {
+      if (eState.markdownHighlightsEnabled && hasStyledSymbol(commentText)) {
          const baseOffset = commentStart >= 0 ? commentStart : 0;
 
          for (const pattern of markdownPatterns) {
@@ -386,18 +445,22 @@ function updateDecorations() {
    }
 
    ranges.forEach((r, key) => {
-      const deco = decorationTypes.get(key);
-      if (deco && r.length) editor.setDecorations(deco, r);
+      const deco = eState.decorationTypes.get(key);
+
+      if (deco && r.length) {
+         editor.setDecorations(deco, r);
+      }
    });
 }
 
-function clearDecorations() {
+function clearDecorations(eState: ExtensionState) {
    const editor = vscode.window.activeTextEditor;
-   if (!editor) return;
-   decorationTypes.forEach(d => editor.setDecorations(d, []));
+
+   if (!editor) {
+      return;
+   }
+   eState.decorationTypes.forEach(val => editor.setDecorations(val, []));
 }
 
-export function deactivate() {
-   decorationTypes.forEach(d => d.dispose());
-   decorationTypes.clear();
-}
+export function deactivate() { }
+

@@ -1,0 +1,9 @@
+
+* text=auto eol=crlf
+
+*.js           eol=crlf
+*.ts           eol=crlf
+*.js.map       eol=crlf
+*.json         eol=crlf
+*.md           eol=crlf
+.vscodeignore  eol=crlf

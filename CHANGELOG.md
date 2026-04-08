@@ -96,9 +96,21 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed issues
 
-- `TODO:` now, get highlighted in regular block comments
+- `TODO:`s now, get highlighted in regular block comments
 
 ### New issues
+
+- `*` specifically requires that you write like: `// *`, and not like this: `//*`
+  - *Temporary fix* : add a space between `//` and `*` symbol.
+
+## [2.8.0] - 31-03-2026
+
+### Changed
+
+- Expanded language list to also support: `php`
+- Partially restructured code.
+
+### Existing issues
 
 - `*` specifically requires that you write like: `// *`, and not like this: `//*`
   - *Temporary fix* : add a space between `//` and `*` symbol.

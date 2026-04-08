@@ -69,6 +69,7 @@ Currently This supports the following languages `id`(s) :
 - `typescript`
 - `javascriptreact`
 - `typescriptreact`
+- `php`
 
 ## Usage
 
@@ -99,7 +100,7 @@ Simply place one of the supported symbols **at the start of a comment**.
 
 ## Known Issues
 
-1. `*` specifically requires that you write like:
+1. `*` Decorator specifically requires that you write like:
 
 ```sh
 // *
